@@ -2,9 +2,10 @@
   "name": "team-manager",
   "version": "1.0.0",
   "scripts": {
-    "build": "cd frontend && npm ci && npm run build && cp -r dist/* ../backend/public/",
-    "start": "cd backend && npm ci --omit=dev && node src/app.js",
+    "build": "cd frontend && npm install && npm run build && mkdir -p ../backend/public && cp -r dist/* ../backend/public/",
+    "start": "cd backend && npm install && node src/app.js",
     "dev:backend": "cd backend && npm install && npm run dev",
     "dev:frontend": "cd frontend && npm install && npm run dev"
   }
 }
+
