@@ -9,8 +9,10 @@ export default function TimeTracker() {
   const [allStatus, setAllStatus] = useState([]);
   const [elapsed, setElapsed] = useState('00:00:00');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const load = async () => {
+    setError('');
     try {
       const [s, e] = await Promise.all([
         api.get(`/time/status/${user.id}`),
@@ -19,11 +21,15 @@ export default function TimeTracker() {
       setStatus(s.data);
       setEntries(e.data);
       if (user.role === 'owner') {
-        const all = await api.get('/time/all-status');
-        setAllStatus(all.data);
+        try {
+          const all = await api.get('/time/all-status');
+          setAllStatus(all.data);
+        } catch { setAllStatus([]); }
       }
     } catch (err) {
       console.error(err);
+      setError('Failed to load time data. Please refresh.');
+      setStatus({ clocked_in: false, entry: null });
     } finally {
       setLoading(false);
     }
@@ -64,6 +70,7 @@ export default function TimeTracker() {
   };
 
   if (loading) return <div className="empty-state">Loading...</div>;
+  if (error) return <div style={{ padding: 32, color: '#b91c1c', background: '#fee2e2', borderRadius: 12 }}>{error}</div>;
 
   return (
     <div>
