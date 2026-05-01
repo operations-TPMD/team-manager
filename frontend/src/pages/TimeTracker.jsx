@@ -7,27 +7,35 @@ export default function TimeTracker() {
   const [status, setStatus] = useState(null);
   const [entries, setEntries] = useState([]);
   const [allStatus, setAllStatus] = useState([]);
-  const [elapsed, setElapsed] = useState('');
+  const [elapsed, setElapsed] = useState('00:00:00');
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const [s, e] = await Promise.all([
-      api.get(`/time/status/${user.id}`),
-      api.get(`/time/entries/${user.id}`)
-    ]);
-    setStatus(s.data);
-    setEntries(e.data);
-    if (user.role === 'owner') {
-      const all = await api.get('/time/all-status');
-      setAllStatus(all.data);
+    try {
+      const [s, e] = await Promise.all([
+        api.get(`/time/status/${user.id}`),
+        api.get(`/time/entries/${user.id}`)
+      ]);
+      setStatus(s.data);
+      setEntries(e.data);
+      if (user.role === 'owner') {
+        const all = await api.get('/time/all-status');
+        setAllStatus(all.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
-    if (!status?.clocked_in || !status?.entry?.clock_in) return;
+    if (!status?.clocked_in || !status?.entry?.clock_in) {
+      setElapsed('00:00:00');
+      return;
+    }
     const interval = setInterval(() => {
       const diff = Date.now() - new Date(status.entry.clock_in).getTime();
       const h = Math.floor(diff / 3600000);
@@ -45,73 +53,102 @@ export default function TimeTracker() {
 
   const clockOut = async () => {
     await api.post('/time/clock-out', { user_id: user.id });
-    setElapsed('');
+    setElapsed('00:00:00');
     load();
   };
 
   const calcHours = (entry) => {
-    if (!entry.clock_out) return '-';
+    if (!entry.clock_out) return '—';
     const diff = new Date(entry.clock_out) - new Date(entry.clock_in);
-    return (diff / 3600000).toFixed(2) + ' ש"ע';
+    return (diff / 3600000).toFixed(2) + 'h';
   };
 
-  if (loading) return <div className="empty-state">טוען...</div>;
+  if (loading) return <div className="empty-state">Loading...</div>;
 
   return (
     <div>
-      <h1 className="page-title">שעון נוכחות</h1>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--slate-900)', letterSpacing: '-0.02em' }}>
+          Time Clock
+        </h1>
+        <p style={{ color: 'var(--slate-500)', fontSize: 13, marginTop: 2 }}>
+          Track your working hours
+        </p>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: user.role === 'owner' ? '1fr 1fr' : '1fr', gap: 24, marginBottom: 24 }}>
-        <div className="card" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 14, color: '#64748b', marginBottom: 8 }}>שלום, {user.name}</div>
+
+        {/* Clock widget */}
+        <div className="card" style={{ textAlign: 'center', padding: '40px 24px' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--slate-500)', marginBottom: 8 }}>
+            {user.name}
+          </div>
+
           <div style={{
-            fontSize: 48, fontWeight: 700, fontFamily: 'monospace',
-            color: status?.clocked_in ? '#22c55e' : '#94a3b8', marginBottom: 16
+            fontSize: 52, fontWeight: 700, fontFamily: 'Poppins, monospace',
+            letterSpacing: '-0.02em',
+            background: status?.clocked_in ? 'var(--grad-primary)' : 'var(--slate-200)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            marginBottom: 8, transition: 'all 0.3s'
           }}>
-            {status?.clocked_in ? elapsed || '00:00:00' : '—'}
+            {elapsed}
           </div>
-          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>
+
+          <div style={{ fontSize: 12, color: 'var(--slate-500)', marginBottom: 28 }}>
             {status?.clocked_in
-              ? `כניסה: ${new Date(status.entry.clock_in).toLocaleTimeString('he-IL')}`
-              : 'לא מחובר כרגע'}
+              ? `Clocked in at ${new Date(status.entry.clock_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+              : 'Not clocked in'}
           </div>
+
+          {/* Status indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 24 }}>
+            <div className={`status-dot ${status?.clocked_in ? 'online' : 'offline'}`} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: status?.clocked_in ? '#22c55e' : 'var(--slate-400)' }}>
+              {status?.clocked_in ? 'Working' : 'Offline'}
+            </span>
+          </div>
+
           {status?.clocked_in ? (
-            <button className="btn btn-danger" onClick={clockOut} style={{ padding: '12px 32px', fontSize: 16 }}>
+            <button className="btn btn-danger" onClick={clockOut}
+              style={{ padding: '13px 40px', fontSize: 15, borderRadius: '999px' }}>
               Clock Out
             </button>
           ) : (
-            <button className="btn btn-success" onClick={clockIn} style={{ padding: '12px 32px', fontSize: 16 }}>
+            <button className="btn btn-success" onClick={clockIn}
+              style={{ padding: '13px 40px', fontSize: 15, borderRadius: '999px', boxShadow: '0 4px 20px rgba(34,197,94,.3)' }}>
               Clock In
             </button>
           )}
         </div>
 
+        {/* Team status (owners only) */}
         {user.role === 'owner' && (
           <div className="card">
-            <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>סטטוס צוות</h2>
+            <div className="section-title" style={{ marginBottom: 14 }}>Team Status</div>
             {allStatus.length === 0 ? (
-              <div className="empty-state">אין עובדים</div>
+              <div className="empty-state" style={{ padding: '24px 0' }}>No employees</div>
             ) : (
               allStatus.map(e => (
                 <div key={e.id} style={{
                   display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '8px 0', borderBottom: '1px solid #f1f5f9'
+                  padding: '10px 0', borderBottom: '1px solid var(--slate-100)'
                 }}>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: '50%',
-                    background: e.clocked_in ? '#22c55e' : '#e2e8f0', flexShrink: 0
-                  }} />
-                  <span className="avatar" style={{ width: 28, height: 28, fontSize: 12 }}>{e.name.charAt(0)}</span>
+                  <div className={`status-dot ${e.clocked_in ? 'online' : 'offline'}`} />
+                  <span className="avatar" style={{ width: 30, height: 30, fontSize: 11 }}>{e.name.charAt(0)}</span>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{e.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate-900)' }}>{e.name}</div>
                     {e.clocked_in && (
-                      <div style={{ fontSize: 11, color: '#64748b' }}>
-                        מאז {new Date(e.clock_in).toLocaleTimeString('he-IL')}
+                      <div style={{ fontSize: 11, color: 'var(--slate-500)' }}>
+                        Since {new Date(e.clock_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     )}
                   </div>
-                  <span style={{ fontSize: 12, color: e.clocked_in ? '#22c55e' : '#94a3b8' }}>
-                    {e.clocked_in ? 'עובד' : 'לא עובד'}
+                  <span style={{
+                    fontSize: 11, fontWeight: 600,
+                    color: e.clocked_in ? '#22c55e' : 'var(--slate-400)',
+                    textTransform: 'uppercase', letterSpacing: '0.05em'
+                  }}>
+                    {e.clocked_in ? 'Working' : 'Offline'}
                   </span>
                 </div>
               ))
@@ -120,26 +157,31 @@ export default function TimeTracker() {
         )}
       </div>
 
+      {/* History */}
       <div className="card">
-        <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>היסטוריה</h2>
+        <div className="section-title" style={{ marginBottom: 14 }}>Recent History</div>
         {entries.length === 0 ? (
-          <div className="empty-state">אין רשומות</div>
+          <div className="empty-state" style={{ padding: '24px 0' }}>No time entries yet</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table className="data-table">
             <thead>
-              <tr style={{ background: '#f8fafc' }}>
-                {['תאריך', 'כניסה', 'יציאה', 'שעות'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: '#475569' }}>{h}</th>
-                ))}
+              <tr>
+                <th>Date</th>
+                <th>Clock In</th>
+                <th>Clock Out</th>
+                <th>Hours</th>
               </tr>
             </thead>
             <tbody>
               {entries.slice(0, 20).map(e => (
-                <tr key={e.id} style={{ borderTop: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '8px 12px' }}>{new Date(e.date).toLocaleDateString('he-IL')}</td>
-                  <td style={{ padding: '8px 12px' }}>{new Date(e.clock_in).toLocaleTimeString('he-IL')}</td>
-                  <td style={{ padding: '8px 12px' }}>{e.clock_out ? new Date(e.clock_out).toLocaleTimeString('he-IL') : <span style={{ color: '#22c55e' }}>פעיל</span>}</td>
-                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>{calcHours(e)}</td>
+                <tr key={e.id}>
+                  <td>{new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                  <td>{new Date(e.clock_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</td>
+                  <td>{e.clock_out
+                    ? new Date(e.clock_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                    : <span style={{ color: '#22c55e', fontWeight: 600 }}>Active</span>}
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{calcHours(e)}</td>
                 </tr>
               ))}
             </tbody>

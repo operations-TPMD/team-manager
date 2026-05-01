@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { sendAssignmentEmail } = require('../services/email');
 
 router.get('/', async (req, res) => {
   try {
@@ -45,21 +46,33 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { title, description, due_date, created_by, assignee_ids, reminder_at } = req.body;
+  const { title, description, due_date, created_by, assignee_ids, reminder_at, category } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const task = await client.query(
-      'INSERT INTO tasks (title, description, due_date, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
-      [title, description, due_date || null, created_by]
+      'INSERT INTO tasks (title, description, due_date, created_by, category) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [title, description, due_date || null, created_by, category || 'General']
     );
     const taskId = task.rows[0].id;
+
     if (assignee_ids?.length) {
       for (const uid of assignee_ids) {
         await client.query('INSERT INTO task_assignments (task_id, user_id) VALUES ($1, $2)', [taskId, uid]);
+        // Send email notification
+        try {
+          const userRes = await client.query('SELECT name, email FROM users WHERE id = $1', [uid]);
+          if (userRes.rows.length > 0) {
+            const { name, email } = userRes.rows[0];
+            sendAssignmentEmail(email, name, title, category || 'General').catch(e => console.error('Email error:', e));
+          }
+        } catch (emailErr) {
+          console.error('Assignment email error:', emailErr.message);
+        }
       }
     }
+
     if (reminder_at) {
       await client.query('INSERT INTO task_reminders (task_id, remind_at) VALUES ($1, $2)', [taskId, reminder_at]);
     }
@@ -74,7 +87,7 @@ router.post('/', async (req, res) => {
 });
 
 router.patch('/:id', async (req, res) => {
-  const { status, title, description, due_date } = req.body;
+  const { status, title, description, due_date, category } = req.body;
   try {
     const result = await pool.query(
       `UPDATE tasks SET
@@ -82,9 +95,10 @@ router.patch('/:id', async (req, res) => {
         title = COALESCE($2, title),
         description = COALESCE($3, description),
         due_date = COALESCE($4, due_date),
+        category = COALESCE($5, category),
         updated_at = NOW()
-       WHERE id = $5 RETURNING *`,
-      [status, title, description, due_date, req.params.id]
+       WHERE id = $6 RETURNING *`,
+      [status, title, description, due_date, category, req.params.id]
     );
     res.json(result.rows[0]);
   } catch (err) {
